@@ -35,11 +35,11 @@ namespace TeamerTelegramParser
             var dbClient = new MongoClient(dbLink);
             using var client = new WTelegram.Client(Config);
             await client.LoginUserIfNeeded();
+            var chats = await client.Messages_GetAllChats(null);
+            InputPeer peer = chats.chats[1169443045];
             
             while(true)
             {
-                var chats = await client.Messages_GetAllChats(null);
-                InputPeer peer = chats.chats[1169443045];
                 var messages = await client.Messages_GetHistory(peer, 0, default, 0, 20, 0, 0, 0);
                 var lastCalls = messages
                     .Messages
@@ -51,10 +51,10 @@ namespace TeamerTelegramParser
                     .Except(lastCalls);
 
                 var newsItems = new List<NewsItem>();
+                var regex = new Regex("(?<=(\"url\": \")).*?(?=(\"))");
                 foreach (var newsItem in news)
                 {
                     var json = newsItem.media.ToJson();
-                    var regex = new Regex("(?<=(\"url\": \")).*?(?=(\"))");
                     var link = regex.Match(json).Value;
                     var i = new NewsItem(link, newsItem.message, newsItem.id);
                     newsItems.Add(i);
@@ -65,8 +65,14 @@ namespace TeamerTelegramParser
                 var collection = dbClient.GetDatabase("news").GetCollection<NewsItem>("news");
                 foreach (var item in dist)
                 {
-                    await collection.InsertOneAsync(item);
-                    _news.Add(item);
+                    var options = new UpdateOptions {IsUpsert = true};
+                    var update = Builders<NewsItem>.Update
+                        .Set("mediaLink", item.mediaLink)
+                        .Set("text", item.text)
+                        .Set("id", item.id);
+                    await collection.UpdateOneAsync(x => x.id == item.id, update, options);
+                    //await collection.InsertOneAsync(item);
+                    //_news.Add(item);
                 }
 
                 Thread.Sleep(5 * 60 * 1000);
