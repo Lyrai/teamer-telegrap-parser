@@ -31,7 +31,6 @@ namespace TeamerTelegramParser
                 _phoneNumber = fs.ReadLine();
             }
 
-            _news = new List<NewsItem>();
             var dbClient = new MongoClient(dbLink);
             using var client = new WTelegram.Client(Config);
             await client.LoginUserIfNeeded();
@@ -44,7 +43,8 @@ namespace TeamerTelegramParser
                 var lastCalls = messages
                     .Messages
                     .OfType<Message>()
-                    .Where(x => x.message.ToLower().Contains("#lastcall"));
+                    .Where(x => x.message.ToLower().Contains("#lastcall"))
+                    .ToList();
                 var news = messages
                     .Messages
                     .OfType<Message>()
@@ -60,10 +60,8 @@ namespace TeamerTelegramParser
                     newsItems.Add(i);
                 }
 
-                var dist = newsItems.Except(_news).ToList();
-                
                 var collection = dbClient.GetDatabase("news").GetCollection<NewsItem>("news");
-                foreach (var item in dist)
+                foreach (var item in newsItems)
                 {
                     var options = new UpdateOptions {IsUpsert = true};
                     var update = Builders<NewsItem>.Update
@@ -71,8 +69,18 @@ namespace TeamerTelegramParser
                         .Set("text", item.text)
                         .Set("id", item.id);
                     await collection.UpdateOneAsync(x => x.id == item.id, update, options);
-                    //await collection.InsertOneAsync(item);
-                    //_news.Add(item);
+                }
+
+                var lastCallsCollection = dbClient.GetDatabase("notifications").GetCollection<Notification>("common");
+                foreach (var item in lastCalls)
+                {
+                    var options = new UpdateOptions {IsUpsert = true};
+                    var update = Builders<Notification>.Update
+                        .Set("header", "Last Call")
+                        .Set("body", item.message)
+                        .Set("id", item.id)
+                        .Set("seen", true);
+                    await lastCallsCollection.UpdateOneAsync(x => x.id == item.id, update, options);
                 }
 
                 Thread.Sleep(5 * 60 * 1000);
@@ -101,6 +109,21 @@ namespace TeamerTelegramParser
         {
             this.mediaLink = mediaLink;
             this.text = text;
+            this.id = id;
+        }
+    }
+
+    class Notification
+    {
+        public string header;
+        public string body;
+        public bool seen = true;
+        public int id;
+
+        public Notification(string header, string body, int id)
+        {
+            this.header = header;
+            this.body = body;
             this.id = id;
         }
     }
